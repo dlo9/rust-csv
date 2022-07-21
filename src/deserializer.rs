@@ -69,6 +69,9 @@ pub fn deserialize_byte_record<'de, D: Deserialize<'de>>(
 ///
 /// The lifetime `'r` refers to the lifetime of the underlying record.
 trait DeRecord<'r> {
+    // Returns the current field index.
+    fn field(&self) -> u64;
+
     /// Returns true if and only if this deserialize has access to headers.
     fn has_headers(&self) -> bool;
 
@@ -101,7 +104,32 @@ trait DeRecord<'r> {
 
 struct DeRecordWrap<T>(T);
 
+impl<'r, T: DeRecord<'r>> DeRecordWrap<T> {
+    // Add the current field index to an error if it doesn't already exist
+    fn add_field<E>(self, func: impl FnOnce(Self) -> Result<E, DeserializeError>) -> Result<E, DeserializeError> {
+        let field = self.field();
+        func(self).map_err(|mut e| {
+            e.field.get_or_insert(field);
+            e
+        })
+    }
+
+    // Add the current field index to an error if it doesn't already exist
+    fn add_field_mut<E>(&mut self, func: impl FnOnce(&mut Self) -> Result<E, DeserializeError>) -> Result<E, DeserializeError> {
+        let field = self.field();
+        func(self).map_err(|mut e| {
+            e.field.get_or_insert(field);
+            e
+        })
+    }
+}
+
 impl<'r, T: DeRecord<'r>> DeRecord<'r> for DeRecordWrap<T> {
+    #[inline]
+    fn field(&self) -> u64 {
+        self.0.field()
+    }
+
     #[inline]
     fn has_headers(&self) -> bool {
         self.0.has_headers()
@@ -155,6 +183,11 @@ struct DeStringRecord<'r> {
 }
 
 impl<'r> DeRecord<'r> for DeStringRecord<'r> {
+    #[inline]
+    fn field(&self) -> u64 {
+        self.field
+    }
+
     #[inline]
     fn has_headers(&self) -> bool {
         self.headers.is_some()
@@ -239,6 +272,11 @@ struct DeByteRecord<'r> {
 }
 
 impl<'r> DeRecord<'r> for DeByteRecord<'r> {
+    #[inline]
+    fn field(&self) -> u64 {
+        self.field
+    }
+
     #[inline]
     fn has_headers(&self) -> bool {
         self.headers.is_some()
@@ -547,7 +585,7 @@ impl<'a, 'de: 'a, T: DeRecord<'de>> Deserializer<'de>
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        visitor.visit_enum(self)
+        self.add_field_mut(|this| visitor.visit_enum(this))
     }
 
     fn deserialize_ignored_any<V: Visitor<'de>>(
