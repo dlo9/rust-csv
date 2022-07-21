@@ -392,7 +392,7 @@ impl<'a, 'de: 'a, T: DeRecord<'de>> Deserializer<'de>
         self,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        self.infer_deserialize(visitor)
+        self.add_field_mut(|this| this.infer_deserialize(visitor))
     }
 
     fn deserialize_bool<V: Visitor<'de>>(
@@ -462,14 +462,14 @@ impl<'a, 'de: 'a, T: DeRecord<'de>> Deserializer<'de>
         self,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        self.next_field().and_then(|f| visitor.visit_borrowed_str(f))
+        self.add_field_mut(|this| visitor.visit_borrowed_str(this.next_field()?))
     }
 
     fn deserialize_string<V: Visitor<'de>>(
         self,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        self.next_field().and_then(|f| visitor.visit_str(f.into()))
+        self.add_field_mut(|this| visitor.visit_str(this.next_field()?.into()))
     }
 
     fn deserialize_bytes<V: Visitor<'de>>(
